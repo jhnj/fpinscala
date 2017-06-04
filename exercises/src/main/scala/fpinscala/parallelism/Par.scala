@@ -9,7 +9,9 @@ object Par {
   def run[A](s: ExecutorService)(a: Par[A]): Future[A] = a(s)
 
   def unit[A](a: A): Par[A] = (es: ExecutorService) => UnitFuture(a) // `unit` is represented as a function that returns a `UnitFuture`, which is a simple implementation of `Future` that just wraps a constant value. It doesn't use the `ExecutorService` at all. It's always done and can't be cancelled. Its `get` method simply returns the value that we gave it.
-  
+
+  def async[A](a: => A): Par[A] = fork(unit(a))
+
   private case class UnitFuture[A](get: A) extends Future[A] {
     def isDone = true 
     def get(timeout: Long, units: TimeUnit) = get 
@@ -29,10 +31,54 @@ object Par {
       def call = a(es).get
     })
 
+  def lazyUnit[A](a: => A): Par[A] = fork(unit(a))
+
+  def asyncF[A, B](f: A => B): A => Par[B] = a => lazyUnit(f(a))
+
   def map[A,B](pa: Par[A])(f: A => B): Par[B] = 
     map2(pa, unit(()))((a,_) => f(a))
 
   def sortPar(parList: Par[List[Int]]) = map(parList)(_.sorted)
+
+  def sequence[A](ps: List[Par[A]]): Par[List[A]] = {
+    val parList: Par[List[A]] = unit(List[A]())
+    ps.foldRight(parList) {
+      (a, list) => map2(a, list)(_ :: _)
+    }
+  }
+
+  def parMap[A, B](as: List[A])(f: A => B): Par[List[B]] = {
+    val futures = as.map(asyncF(f))
+    sequence(futures)
+  }
+
+  def parFilter[A](as: List[A])(f: A => Boolean): Par[List[A]] = {
+    val futures = as.map(asyncF(a => if (f(a)) Some(a) else None))
+    map(sequence(futures))(_.flatten)
+  }
+
+
+  def parFold[A, B](as: IndexedSeq[A], z: B)(f: (A, B) => B): Par[B] = {
+    val res: Par[B] = unit(z)
+    as.foldRight(res) {
+      (a, res) => map(res)(f(a, _))
+    }
+  }
+
+  def sum(ints: IndexedSeq[Int]): Par[Int] = // `IndexedSeq` is a superclass of random-access sequences like `Vector` in the standard library. Unlike lists, these sequences provide an efficient `splitAt` method for dividing them into two parts at a particular index.
+    parFold(ints, 0)(_ + _)
+
+  def parWords(words: IndexedSeq[String]): Par[Int] =
+    parFold(words, 0)((word, sum) => {
+      sum + word.split(' ').length
+    })
+
+  def map3[A, B, C, D](a: Par[A], b: Par[B], c: Par[C])(f: (A, B, C) => D): Par[D] = {
+    val m = map2(a, b)((ap, bp) => (c: C) => f(ap, bp, c))
+    map2(c, m)((cp, mp) => mp(cp))
+  }
+
+
 
   def equal[A](e: ExecutorService)(p: Par[A], p2: Par[A]): Boolean = 
     p(e).get == p2(e).get
@@ -44,6 +90,50 @@ object Par {
     es => 
       if (run(es)(cond).get) t(es) // Notice we are blocking on the result of `cond`.
       else f(es)
+
+  /** 7.9
+    Any fixed size threadpool can be made to deadlock:
+   */
+  def deadlock[A](poolSize: Int): Par[Int] =
+    if (poolSize <= 1) unit(1)
+    else {
+      fork(deadlock(poolSize - 1))
+    }
+
+  /** 7.10
+    * Non-blocking future representation doen't handle errors
+    * fix by returning Either[Exception, A] instead of A. Run code inside try catch inside future
+    */
+
+  /** 7.11
+    */
+  def choiceN[A](n: Par[Int])(choices: List[Par[A]]): Par[A] = {
+    es => choices(n(es).get)(es)
+  }
+
+  def choice[A](cond: Par[Boolean])(a: Par[A], b: Par[A]): Par[A] = {
+    choiceN(map(cond)(if (_) 1 else 0))(List(a, b))
+  }
+
+  def choiceMap[K, V](key: Par[K])(choices: Map[K, Par[V]]): Par[V] = {
+    es => choices(key(es).get)(es)
+  }
+
+  def chooser[A, B](pa: Par[A])(choices: A => Par[B]): Par[B] = {
+    es => choices(pa(es).get)(es)
+  }
+
+  def join[A](a: Par[Par[A]]): Par[A] = {
+    es => a(es).get()(es)
+  }
+
+  def flatMap[A, B](pa: Par[A])(f: A => Par[B]): Par[B] = {
+    join(map(pa)(f))
+  }
+
+  def joinFlatMap[A](a: Par[Par[A]]): Par[A] = {
+    flatMap(a)(av => av)
+  }
 
   /* Gives us infix syntax for `Par`. */
   implicit def toParOps[A](p: Par[A]): ParOps[A] = new ParOps(p)
@@ -63,5 +153,14 @@ object Examples {
       val (l,r) = ints.splitAt(ints.length/2) // Divide the sequence in half using the `splitAt` function.
       sum(l) + sum(r) // Recursively sum both halves and add the results together.
     }
+
+  def main(args: Array[String]): Unit = {
+    val words = Array("one two", "three")
+    val res = parWords(words)
+    println(Par.run(new ForkJoinPool())(res).get)
+
+    val fixedSizeThreadPool = Executors.newFixedThreadPool(100)
+    Par.run(fixedSizeThreadPool)(deadlock(100)).get
+  }
 
 }

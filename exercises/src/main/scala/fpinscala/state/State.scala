@@ -150,8 +150,8 @@ object State {
       sList.map2(s)((list, a) => a :: list)
     })
 
-  def get[S]: State[S, S] = State(s => (s, s))
-  def set[S](s: S): State[S, Unit] = State(_ => (Unit, s))
+  private def get[S]: State[S, S] = State(s => (s, s))
+  private def set[S](s: S): State[S, Unit] = State(_ => (Unit, s))
 
   def modify[S](f: S => S): State[S, Unit] = for {
     s <- get
