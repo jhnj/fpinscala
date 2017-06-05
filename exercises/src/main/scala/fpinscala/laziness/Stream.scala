@@ -73,6 +73,8 @@ trait Stream[+A] {
     case Empty => None
   })
 
+  def map[B](f: A => B): Stream[B] = mapUnfold(f)
+
   def takeUnfold(n: Int): Stream[A] = unfold((n, this))(i => i._2 match {
     case Cons(x, xs) if i._1 > 0 => Some(x(), (i._1 - 1, xs()))
     case _ => None
@@ -88,6 +90,9 @@ trait Stream[+A] {
       case (Cons(x1, xs1), Cons(x2, xs2)) => Some((f(x1(), x2()), (xs1(), xs2())))
       case _ => None
     })
+
+  def zip[B](as: Stream[B]): Stream[(A, B)] =
+    zipWithUnfold(as, (a: A, b: B) => (a, b))
 
   def zipAllUnfold[B, C](as: Stream[B], f: (Option[A], Option[B]) => C): Stream[C] =
     unfold((this, as))({

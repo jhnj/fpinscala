@@ -23,6 +23,12 @@ object RNG {
 
   val int: Rand[Int] = _.nextInt
 
+
+  def boolean(rng: RNG): (Boolean, RNG) = {
+    val (i, rng2) = rng.nextInt
+    (i % 2 == 0, rng2)
+  }
+
   def unit[A](a: A): Rand[A] =
     rng => (a, rng)
 
