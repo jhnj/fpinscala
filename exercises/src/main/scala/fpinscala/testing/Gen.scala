@@ -229,6 +229,9 @@ object Gen {
       })
     })
   }
+
+  def string(len: Int): Gen[String] =
+    listOfN(len, choose(0, 127)).map(_.map(_.toChar).mkString(""))
 }
 
 //trait Gen[A] {
@@ -266,6 +269,21 @@ case class Gen[+A](sample: State[RNG, A]) {
 
 case class SGen[+A](forSize: Int => Gen[A]) {
   def apply(i: Int): Gen[A] = forSize(i)
+
+  def map[B](f: A => B): SGen[B] =
+    SGen(i => forSize(i).map(f))
+
+  def flatMap[B](f: A => SGen[B]): SGen[B] = {
+    SGen(i => forSize(i).flatMap(a => f(a).forSize(i)))
+  }
+
+  def **[B](that: SGen[B]): SGen[(A, B)] = {
+    SGen(i => this.apply(i) ** that.apply(i))
+  }
+
+  def **[B](that: Gen[B]): SGen[(A, B)] = {
+    SGen(i => this.apply(i) ** that)
+  }
 }
 
 object testRun {
