@@ -207,6 +207,7 @@ case class Location(input: String, offset: Int = 0) {
     if (input.length > 1) input.lines.drop(line-1).next
     else ""
 
+
   def inputWithOffset(): String = input.drop(offset)
 }
 
@@ -222,5 +223,16 @@ case class ParseError(stack: List[(Location,String)] = List(),
 
   def latest: Option[(Location, String)] =
     stack.lastOption
+
+  override def toString: String = {
+    val context = stack.lastOption.map { case (l, _) =>
+      l.currentLine + '\n' +
+        (" " * (l.col - 1)) + "^\n\n"
+    }
+    val errors = stack.map { case (l, msg) =>
+      s"[${l.line}:${l.col}] -> $msg"
+    }.mkString("\n")
+    context.getOrElse("") + errors
+  }
 
 }
