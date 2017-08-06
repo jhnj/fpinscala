@@ -205,8 +205,12 @@ object Monoid {
 trait Foldable[F[_]] {
   import Monoid._
 
-  def foldRight[A, B](as: F[A])(z: B)(f: (A, B) => B): B
-  def foldLeft[A, B](as: F[A])(z: B)(f: (B, A) => B): B
+  def foldRight[A, B](as: F[A])(z: B)(f: (A, B) => B): B =
+    foldMap(as)(f.curried)(endoMonoid[B])(z)
+  def foldLeft[A, B](as: F[A])(z: B)(f: (B, A) => B): B = {
+    def reversedCurried(a: A) = (b: B) => f(b, a)
+    foldMap(as)(reversedCurried)(dual(endoMonoid[B]))(z)
+  }
   def foldMap[A, B](as: F[A])(f: A => B)(mb: Monoid[B]): B =
     foldLeft(as)(mb.zero)((b, a) => mb.op(b, f(a)))
   def concatenate[A](as: F[A])(m: Monoid[A]): A =
