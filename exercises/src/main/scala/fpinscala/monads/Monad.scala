@@ -60,7 +60,7 @@ trait Monad[M[_]] extends Functor[M] {
 
   // Implement in terms of `compose`:
   def _flatMap[A,B](ma: M[A])(f: A => M[B]): M[B] =
-    compose((_: Unit) => unit(ma), f)()
+    compose((_: Unit) => ma, f)()
 
 
   /** 11.9
@@ -206,7 +206,7 @@ object Monad {
     * Laws for getState, setState, unit, flatMap
     * state.getState == state.flatMap(unit).getState
     * state.setState(s).getState == state.setState(s).flatMap(unit).getState    *
-    * TODO more
+    * state.setState(s) = state.flatMap(_.setState(s))
     */
 
   val idMonad: Monad[Id] = new Monad[Id] {
