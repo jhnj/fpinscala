@@ -1,5 +1,7 @@
 package fpinscala.iomonad
 
+import fpinscala.iomonad
+
 import language.postfixOps
 import language.higherKinds
 import scala.io.StdIn.readLine
@@ -371,19 +373,54 @@ object IO3 {
   case class FlatMap[F[_],A,B](s: Free[F, A],
                                f: A => Free[F, B]) extends Free[F, B]
 
-  // Exercise 1: Implement the free monad
-  def freeMonad[F[_]]: Monad[({type f[a] = Free[F,a]})#f] = ???
+  /** 13.1
+    * Free is a monad for any choice of F . Implement map and flatMap methods on the
+    * Free trait, and give the Monad instance for Free[F,_].10
+    */
+  def freeMonad[F[_]]: Monad[({type f[a] = Free[F, a]})#f] = new Monad[({
+    type f[a] = Free[F, a]
+  })#f] {
+    override def flatMap[A, B](a: Free[F, A])(f: (A) => Free[F, B]): Free[F, B] = a flatMap f
+    override def unit[A](a: => A): Free[F, A] = Return(a)
+  }
 
-  // Exercise 2: Implement a specialized `Function0` interpreter.
-  // @annotation.tailrec
-  def runTrampoline[A](a: Free[Function0,A]): A = ???
+  /** 13.2
+    * Implement a specialized tail-recursive interpreter, runTrampoline, for running a
+    * Free[Function0,A].
+    */
+  @annotation.tailrec
+  def runTrampoline[A](a: Free[Function0,A]): A = a match {
+    case Return(v) => v
+    case Suspend(r) => r()
+    case FlatMap(x, f) => x match {
+      case Return(v) => runTrampoline(f(v))
+      case Suspend(r) => runTrampoline(f(r()))
+      case FlatMap(y, g) => runTrampoline(y.flatMap(a => g(a).flatMap(f)))
+    }
+  }
 
+  /** 13.3
+    * Hard: Implement a generic interpreter for Free[F,A], given a Monad[F]. You can pat-
+    * tern your implementation after the Async interpreter given previously, including use
+    * of a tail-recursive step function.
+    */
   // Exercise 3: Implement a `Free` interpreter which works for any `Monad`
-  def run[F[_],A](a: Free[F,A])(implicit F: Monad[F]): F[A] = ???
+  def run[F[_],A](a: Free[F,A])(implicit F: Monad[F]): F[A] = step(a) match {
+    case Return(v) => F.unit(v)
+    case Suspend(r) => r
+    case FlatMap(x, f) => x match {
+      case Suspend(r) => F.flatMap(r)(v => run(f(v)))
+      case _ => sys.error("should be eliminated by step")
+    }
+  }
 
   // return either a `Suspend`, a `Return`, or a right-associated `FlatMap`
   // @annotation.tailrec
-  def step[F[_],A](a: Free[F,A]): Free[F,A] = ???
+  def step[F[_],A](a: Free[F,A]): Free[F,A] = a match {
+    case FlatMap(FlatMap(x, f), g) => step(x.flatMap(am => f(am).flatMap(g)))
+    case FlatMap(Return(x), f) => step(f(x))
+    case _ => a
+  }
 
   /*
   The type constructor `F` lets us control the set of external requests our
@@ -490,9 +527,16 @@ object IO3 {
   // Exercise 4 (optional, hard): Implement `runConsole` using `runFree`,
   // without going through `Par`. Hint: define `translate` using `runFree`.
 
-  def translate[F[_],G[_],A](f: Free[F,A])(fg: F ~> G): Free[G,A] = ???
+  def translate[F[_],G[_],A](f: Free[F,A])(fg: F ~> G): Free[G,A] = {
+    type FreeM[A] = Free[G, A]
+    val fToFreeM = new (F ~> FreeM) {
+      override def apply[A](f: F[A]): FreeM[A] = Suspend(fg(f))
+    }
+    runFree[F,FreeM,A](f)(fToFreeM)(freeMonad)
+  }
 
-  def runConsole[A](a: Free[Console,A]): A = ???
+  def runConsole[A](a: Free[Console,A]): A =
+    runTrampoline(translate(a)(consoleToFunction0))
 
   /*
   There is nothing about `Free[Console,A]` that requires we interpret
@@ -560,6 +604,12 @@ object IO3 {
   // We conclude that a good representation of an `IO` monad is this:
   type IO[A] = Free[Par, A]
 
+  /** 13.5
+    * Hard: We’re not going to work through a full-fledged implementation of a non-blocking
+    * I/O library here, but you may be interested to explore this on your own by building off the
+    * java.nio library (API at http://mng.bz/uojM). As a start, try implementing an asyn-
+    * chronous read from an AsynchronousFileChannel (API at http://mng.bz/X30L).
+    */
   /*
    * Exercise 5: Implement a non-blocking read from an asynchronous file channel.
    * We'll just give the basic idea - here, we construct a `Future`
@@ -572,7 +622,23 @@ object IO3 {
 
   def read(file: AsynchronousFileChannel,
            fromPosition: Long,
-           numBytes: Int): Par[Either[Throwable, Array[Byte]]] = ???
+           numBytes: Int): Par[Either[Throwable, Array[Byte]]] = {
+    Par.async[Either[Throwable, Array[Byte]]]((cb: Either[Throwable, Array[Byte]] => Unit) => {
+      val buffer = ByteBuffer.allocate(numBytes)
+      file.read(buffer, fromPosition, (), new CompletionHandler[Integer,Unit] {
+        def completed(v: Integer, a: Unit): Unit = {
+          if (v == numBytes) {
+            cb(Right(buffer.array))
+          } else {
+            cb(Left(new Throwable(s"Read only $v bytes")))
+          }
+        }
+        def failed(throwable: Throwable, a: Unit): Unit =
+          cb(Left(throwable))
+      })
+
+    })
+  }
 
   // Provides the syntax `Async { k => ... }` for asyncronous IO blocks.
   def Async[A](cb: (A => Unit) => Unit): IO[A] =
