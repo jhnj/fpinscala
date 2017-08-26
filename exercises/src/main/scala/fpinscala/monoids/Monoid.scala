@@ -92,10 +92,18 @@ object Monoid {
     associative && zero
   }
 
-  def trimMonoid(s: String): Monoid[String] = ???
+  def trimMonoid(s: String): Monoid[String] = new Monoid[String] {
+    override def op(a1: String, a2: String): String = (a1.trim,a2.trim) match {
+      case ("", w2) => w2
+      case (w1, "") => w1
+      case (w1,w2) => s"$w2 $w2"
+    }
+    override def zero: String = ""
+  }
 
   def concatenate[A](as: List[A], m: Monoid[A]): A =
-    ???
+    foldLeft(as)(m.zero)(m.op)
+
 
   def foldMap[A, B](as: List[A], m: Monoid[B])(f: A => B): B =
     as.foldLeft(m.zero)((b, a) => m.op(b, f(a)))
@@ -122,8 +130,58 @@ object Monoid {
    else inner(0, as.length - 1)
   }
 
+  sealed trait SeqInt
+  case class SingleInt(i: Int) extends SeqInt
+  case class OrderedSeqInt(min: Int, max: Int, ascending: Boolean) extends SeqInt
+  case object UnOrderedSeqInt extends SeqInt
+  case object EmptySeqInt extends SeqInt
+
+  /** 10.9
+    * Hard: Use foldMap to detect whether a given IndexedSeq[Int] is ordered. You’ll need
+    * to come up with a creative Monoid.
+    *
+    * Monoid for sorting sequences of ints, works only for strict equality
+    */
+  val seqIntMonoid: Monoid[SeqInt] = new Monoid[SeqInt] {
+    def op(a1: SeqInt, a2: SeqInt): SeqInt = (a1, a2) match {
+      case (UnOrderedSeqInt, _) => UnOrderedSeqInt
+      case (_, UnOrderedSeqInt) => UnOrderedSeqInt
+      case (OrderedSeqInt(min1,max1,asc1), OrderedSeqInt(min2,max2,asc2)) =>
+        (asc1,asc2) match {
+          case (true,true) =>
+            if (max1 < min2) OrderedSeqInt(min1,max2,asc1)
+            else UnOrderedSeqInt
+          case (false,false) =>
+            if (max1 > min2) OrderedSeqInt(min1,max2,asc1)
+            else UnOrderedSeqInt
+          case _ => UnOrderedSeqInt
+        }
+      case (OrderedSeqInt(min,max,asc), SingleInt(i)) =>
+        if ((max < i && asc) ||
+            (max > i && !asc))
+          OrderedSeqInt(min, i, asc)
+        else
+          UnOrderedSeqInt
+      case (SingleInt(i), OrderedSeqInt(min, max, asc)) =>
+        if ((min > i && asc) ||
+            (min < i && !asc))
+          OrderedSeqInt(i, max, asc)
+        else
+          UnOrderedSeqInt
+
+      case (SingleInt(i1), SingleInt(i2)) =>
+        OrderedSeqInt(i1,i2, i1 < i2)
+      case (s, EmptySeqInt) => s
+      case (EmptySeqInt, s) => s
+    }
+    def zero: SeqInt = EmptySeqInt
+  }
+
   def ordered(ints: IndexedSeq[Int]): Boolean =
-    ???
+    foldMapV(ints, seqIntMonoid)(i => SingleInt(i)) match {
+      case UnOrderedSeqInt => false
+      case _ => true
+    }
 
   sealed trait WC
   case class Stub(chars: String) extends WC
@@ -309,6 +367,10 @@ object TestMonoidLaws {
     assert(count("first second third f") == 4)
 
     assert(bag(IndexedSeq("a", "a", "b")) == Map("a" -> 2, "b" -> 1))
+
+    assert(ordered(IndexedSeq(1,2,3,4)))
+    assert(ordered(IndexedSeq(4,3,2,1)))
+    assert(!ordered(IndexedSeq(3,2,1,4)))
   }
 }
 

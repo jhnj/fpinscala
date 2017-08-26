@@ -90,6 +90,10 @@ trait Applicative[F[_]] extends Functor[F] {
     }
   }
 
+  /** 12.9
+    * Hard: Applicative functors also compose another way! If F[_] and G[_] are applicative
+    * functors, then so is F[G[_]]. Implement this function:
+    */
   def compose[G[_]](G: Applicative[G]): Applicative[({type f[x] = F[G[x]]})#f] = {
     val F = this
     new Applicative[({
@@ -136,7 +140,16 @@ trait Monad[F[_]] extends Applicative[F] {
 }
 
 object Monad {
-  def eitherMonad[E]: Monad[({type f[x] = Either[E, x]})#f] = ???
+  /** 12.5
+    * Write a monad instance for Either .
+    */
+  def eitherMonad[E]: Monad[({type f[x] = Either[E, x]})#f] = new Monad[({
+  type f[x] = Either[E, x]
+})#f] {
+    def unit[A](a: => A): Either[E, A] = Right(a)
+    override def flatMap[A, B](ma: Either[E, A])(f: (A) => Either[E, B]): Either[E, B] =
+      ma.flatMap(f)
+  }
 
   def stateMonad[S] = new Monad[({type f[x] = State[S, x]})#f] {
     def unit[A](a: => A): State[S, A] = State(s => (a, s))
@@ -186,7 +199,7 @@ object Applicative {
       a zip b map f.tupled
   }
 
-  /** 12.5
+  /** 12.6
     * Write an Applicative instance for Validation that accumulates errors in Failure.
     * Note that in the case of Failure there’s always at least one error, stored in head. The
     * rest of the errors accumulate in the tail.
