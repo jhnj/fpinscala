@@ -8,6 +8,7 @@ trait RNG {
 }
 
 object RNG {
+
   // NB - this was called SimpleRNG in the book text
 
   case class Simple(seed: Long) extends RNG {
@@ -32,44 +33,50 @@ object RNG {
   def unit[A](a: A): Rand[A] =
     rng => (a, rng)
 
-  def map[A,B](s: Rand[A])(f: A => B): Rand[B] =
+  def map[A, B](s: Rand[A])(f: A => B): Rand[B] =
     rng => {
       val (a, rng2) = s(rng)
       (f(a), rng2)
     }
 
+  /** 6.1 */
   def nonNegativeInt(rng: RNG): (Int, RNG) = {
     val n = rng.nextInt
-    (if (n._1 < 0) -(n._1 + 1)else n._1, n._2)
+    (if (n._1 < 0) -(n._1 + 1) else n._1, n._2)
   }
 
+  /** 6.2 */
   def double(rng: RNG): (Double, RNG) = {
     val (i, r) = nonNegativeInt(rng)
     (i / (Int.MaxValue.toDouble + 1), r)
   }
+
+  /** 6.5 */
   def doubleMap: Rand[Double] = {
     map(nonNegativeInt)(i => i / (Int.MaxValue.toDouble + 1))
   }
 
-  def intDouble(rng: RNG): ((Int,Double), RNG) = {
+  /** 6.3 */
+  def intDouble(rng: RNG): ((Int, Double), RNG) = {
     val (i, rng2) = nonNegativeInt(rng)
     val (d, rng3) = double(rng2)
     ((i, d), rng3)
   }
 
-  def doubleInt(rng: RNG): ((Double,Int), RNG) = {
+  def doubleInt(rng: RNG): ((Double, Int), RNG) = {
     val (i, rng2) = nonNegativeInt(rng)
     val (d, rng3) = double(rng2)
     ((d, i), rng3)
   }
 
-  def double3(rng: RNG): ((Double,Double,Double), RNG) = {
+  def double3(rng: RNG): ((Double, Double, Double), RNG) = {
     val (d1, rng1) = double(rng)
     val (d2, rng2) = double(rng1)
     val (d3, rng3) = double(rng2)
     ((d1, d2, d3), rng3)
   }
 
+  /** 6.4 */
   def ints(count: Int)(rng: RNG): (List[Int], RNG) = {
     if (count <= 0) (Nil, rng)
     else {
@@ -79,17 +86,20 @@ object RNG {
     }
   }
 
-  def map2[A,B,C](ra: Rand[A], rb: Rand[B])(f: (A, B) => C): Rand[C] =
+  /** 6.6 */
+  def map2[A, B, C](ra: Rand[A], rb: Rand[B])(f: (A, B) => C): Rand[C] =
     rng => {
       val (a, rnga) = ra(rng)
       val (b, rngb) = rb(rnga)
       (f(a, b), rngb)
     }
 
+  /** 6.7 */
   def sequence[A](fs: List[Rand[A]]): Rand[List[A]] =
     fs.foldRight(unit[List[A]](Nil))((op, b) => map2(op, b)((f, s) => f :: s))
 
-  def flatMap[A,B](f: Rand[A])(g: A => Rand[B]): Rand[B] = {
+  /** 6.8 */
+  def flatMap[A, B](f: Rand[A])(g: A => Rand[B]): Rand[B] = {
     rng => {
       val (a, rng1) = f(rng)
       g(a)(rng1)
@@ -103,6 +113,7 @@ object RNG {
       else nonNegativeLessThan(n)
     })
 
+  /** 6.9 */
   def mapWithFlatMap[A, B](s: Rand[A])(f: A => B): Rand[B] =
     flatMap(s)(a => unit(f(a)))
 
@@ -110,14 +121,15 @@ object RNG {
     flatMap(s1)(a => map(s2)(b => f(a, b)))
 }
 
-case class State[S,+A](run: S => (A, S)) {
+case class State[S, +A](run: S => (A, S)) {
+  /** 6.10 */
   def map[B](f: A => B): State[S, B] =
     State(s => {
       val (a, ns) = run(s)
       (f(a), ns)
     })
 
-  def map2[B,C](sb: State[S, B])(f: (A, B) => C): State[S, C] =
+  def map2[B, C](sb: State[S, B])(f: (A, B) => C): State[S, C] =
     State(s => {
       val (a, s1) = run(s)
       val (b, s2) = sb.run(s1)
@@ -132,11 +144,14 @@ case class State[S,+A](run: S => (A, S)) {
 }
 
 sealed trait Input
+
 case object Coin extends Input
+
 case object Turn extends Input
 
 case class Machine(locked: Boolean, candies: Int, coins: Int)
 
+/** 6.11 */
 object CMachine {
   def action = (i: Input) => (s: Machine) => {
     (i, s) match {
@@ -149,6 +164,8 @@ object CMachine {
 
 object State {
   type Rand[A] = State[RNG, A]
+
+  /** 6.10 */
   def unit[S, B](b: B): State[S, B] = State(s => (b, s))
 
   def sequence[S, A](fs: List[State[S, A]]): State[S, List[A]] =
@@ -157,6 +174,7 @@ object State {
     })
 
   private def get[S]: State[S, S] = State(s => (s, s))
+
   private def set[S](s: S): State[S, Unit] = State(_ => (Unit, s))
 
   def modify[S](f: S => S): State[S, Unit] = for {
@@ -166,6 +184,7 @@ object State {
 
   def simulateMachine(inputs: List[Input]): State[Machine, (Int, Int)] = {
     def modifyAction: ((Machine => Machine)) => State[Machine, Unit] = f => modify[Machine](f)
+
     for {
       _ <- sequence(inputs.map(v => modifyAction(CMachine.action(v))))
       s <- get

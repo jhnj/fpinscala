@@ -32,7 +32,7 @@ object Par {
     })
 
   def lazyUnit[A](a: => A): Par[A] = fork(unit(a))
-
+  /** 7.4 */
   def asyncF[A, B](f: A => B): A => Par[B] = a => lazyUnit(f(a))
 
   def map[A,B](pa: Par[A])(f: A => B): Par[B] = 
@@ -40,6 +40,7 @@ object Par {
 
   def sortPar(parList: Par[List[Int]]) = map(parList)(_.sorted)
 
+/** 7.5 */
   def sequence[A](ps: List[Par[A]]): Par[List[A]] = {
     val parList: Par[List[A]] = unit(List[A]())
     ps.foldRight(parList) {
@@ -51,7 +52,7 @@ object Par {
     val futures = as.map(asyncF(f))
     sequence(futures)
   }
-
+/** 7.6 */
   def parFilter[A](as: List[A])(f: A => Boolean): Par[List[A]] = {
     val futures = as.map(asyncF(a => if (f(a)) Some(a) else None))
     map(sequence(futures))(_.flatten)
@@ -115,14 +116,15 @@ object Par {
     choiceN(map(cond)(if (_) 1 else 0))(List(a, b))
   }
 
+  /** 7.12 */
   def choiceMap[K, V](key: Par[K])(choices: Map[K, Par[V]]): Par[V] = {
     es => choices(key(es).get)(es)
   }
-
+  /** 7.13 */
   def chooser[A, B](pa: Par[A])(choices: A => Par[B]): Par[B] = {
     es => choices(pa(es).get)(es)
   }
-
+  /** 7.14 */
   def join[A](a: Par[Par[A]]): Par[A] = {
     es => a(es).get()(es)
   }
