@@ -234,5 +234,4 @@ case class ParseError(stack: List[(Location,String)] = List(),
     }.mkString("\n")
     context.getOrElse("") + errors
   }
-
 }
