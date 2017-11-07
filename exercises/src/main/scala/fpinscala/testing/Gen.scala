@@ -30,6 +30,7 @@ shell, which you can fill in and modify while working through the chapter.
   */
 
 /** 8.3
+  * Assuming the following representation of Prop, implement && as a method of Prop.
   */
 trait PropV1 {
   def check: Boolean
@@ -210,6 +211,10 @@ object Gen {
     SGen(len => listOfN(len, g))
   }
 
+  /** 8.13
+    * Define listOf1 for generating nonempty lists, and then update your specification of
+    * max to use this generator.
+    */
   def listOf1[A](g: Gen[A]): SGen[List[A]] = {
     SGen(len => listOfN(len max 1, g))
   }
@@ -270,6 +275,11 @@ case class Gen[+A](sample: State[RNG, A]) {
 case class SGen[+A](forSize: Int => Gen[A]) {
   def apply(i: Int): Gen[A] = forSize(i)
 
+  /** 8.11
+    * Not surprisingly, SGen at a minimum supports many of the same operations as Gen,
+    * and the implementations are rather mechanical. Define some convenience functions
+    * on SGen that simply delegate to the corresponding functions on Gen.5
+    */
   def map[B](f: A => B): SGen[B] =
     SGen(i => forSize(i).map(f))
 
@@ -283,6 +293,10 @@ case class SGen[+A](forSize: Int => Gen[A]) {
 
   def **[B](that: Gen[B]): SGen[(A, B)] = {
     SGen(i => this.apply(i) ** that)
+  }
+
+  def listOfN(size: Gen[Int]): SGen[List[A]] = {
+    SGen(i => size.flatMap(len => Gen.listOfN(len, forSize(i))))
   }
 }
 
